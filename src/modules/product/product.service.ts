@@ -1,29 +1,13 @@
-import {
-  Injectable,
-  NotFoundException,
-  ConflictException,
-  BadRequestException,
-} from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
-import { CreateProductDto } from './dto/create-product.dto';
-import { UpdateProductDto } from './dto/update-product.dto';
-import { AddReviewDto } from './dto/add-review.dto';
-import { Product, ProductDocument } from './schemas/product.schema';
-import { CategoryService } from '../category/category.service';
-
-interface FindAllOptions {
-  page: number;
-  limit: number;
-  search?: string;
-  category?: string;
-  minPrice?: number;
-  maxPrice?: number;
-  featured?: boolean;
-  active?: boolean;
-  sortBy: string;
-  sortOrder: 'asc' | 'desc';
-}
+import { Injectable } from "@nestjs/common";
+import { InjectModel } from "@nestjs/mongoose";
+import { Model, Types } from "mongoose";
+import { CreateProductDto } from "./dto/create-product.dto";
+import { UpdateProductDto } from "./dto/update-product.dto";
+import { AddReviewDto } from "./dto/add-review.dto";
+import { Product, ProductDocument } from "./schemas/product.schema";
+import { CategoryService } from "../category/category.service";
+import { ProductsPaginationDto } from "../../common/dto";
+import { RpcException } from "@nestjs/microservices";
 
 @Injectable()
 export class ProductService {
@@ -40,7 +24,11 @@ export class ProductService {
     });
 
     if (existingSku) {
-      throw new ConflictException('Ya existe un producto con ese SKU');
+      // throw new ConflictException("Ya existe un producto con ese SKU");
+      throw new RpcException({
+        status: 409,
+        message: "There is already a product using that SKU",
+      });
     }
 
     // Verificar que la categoría existe
@@ -54,17 +42,17 @@ export class ProductService {
     return product.save();
   }
 
-  async findAll(options: FindAllOptions) {
+  async findAll(options: ProductsPaginationDto) {
     const {
-      page,
-      limit,
+      page = 1,
+      limit = 10,
       search,
       category,
       minPrice,
       maxPrice,
       featured,
       active,
-      sortBy,
+      sortBy = "desc",
       sortOrder,
     } = options;
 
@@ -100,12 +88,12 @@ export class ProductService {
 
     // Configurar ordenamiento
     const sortOptions: any = {};
-    sortOptions[sortBy] = sortOrder === 'asc' ? 1 : -1;
+    sortOptions[sortBy] = sortOrder === "asc" ? 1 : -1;
 
     const [products, total] = await Promise.all([
       this.productModel
         .find(filter)
-        .populate('categoryId', 'name slug')
+        .populate("categoryId", "name slug")
         .skip(skip)
         .limit(limit)
         .sort(sortOptions)
@@ -124,16 +112,22 @@ export class ProductService {
 
   async findOne(id: string): Promise<Product> {
     if (!Types.ObjectId.isValid(id)) {
-      throw new BadRequestException('ID de producto inválido');
+      throw new RpcException({
+        status: 400,
+        message: "Product ID not valid",
+      });
     }
 
     const product = await this.productModel
       .findById(id)
-      .populate('categoryId', 'name slug')
+      .populate("categoryId", "name slug")
       .exec();
 
     if (!product) {
-      throw new NotFoundException('Producto no encontrado');
+      throw new RpcException({
+        status: 404,
+        message: "Product not found",
+      });
     }
 
     return product;
@@ -142,19 +136,29 @@ export class ProductService {
   async findBySku(sku: string): Promise<Product> {
     const product = await this.productModel
       .findOne({ sku })
-      .populate('categoryId', 'name slug')
+      .populate("categoryId", "name slug")
       .exec();
 
     if (!product) {
-      throw new NotFoundException('Producto no encontrado');
+      throw new RpcException({
+        status: 404,
+        message: "Product not found",
+      });
     }
 
     return product;
   }
 
-  async findByCategory(categoryId: string, page: number = 1, limit: number = 10) {
+  async findByCategory(
+    categoryId: string,
+    page: number = 1,
+    limit: number = 10,
+  ) {
     if (!Types.ObjectId.isValid(categoryId)) {
-      throw new BadRequestException('ID de categoría inválido');
+      throw new RpcException({
+        status: 400,
+        message: "Product ID not valid",
+      });
     }
 
     // Verificar que la categoría existe
@@ -169,7 +173,7 @@ export class ProductService {
     const [products, total] = await Promise.all([
       this.productModel
         .find(filter)
-        .populate('categoryId', 'name slug')
+        .populate("categoryId", "name slug")
         .skip(skip)
         .limit(limit)
         .sort({ createdAt: -1 })
@@ -186,7 +190,10 @@ export class ProductService {
     };
   }
 
-  async update(id: string, updateProductDto: UpdateProductDto): Promise<Product> {
+  async update({
+    id,
+    ...updateProductDto
+  }: UpdateProductDto): Promise<Product> {
     const product = await this.findOne(id);
 
     // Si se está actualizando el SKU, verificar que no exista
@@ -197,47 +204,60 @@ export class ProductService {
       });
 
       if (existingSku) {
-        throw new ConflictException('Ya existe un producto con ese SKU');
+        throw new RpcException({
+          status: 409,
+          message: "There is already a product using that SKU",
+        });
       }
     }
 
     // Si se está actualizando la categoría, verificar que existe
     if (updateProductDto.categoryId) {
       await this.categoryService.findOne(updateProductDto.categoryId);
-      updateProductDto.categoryId = new Types.ObjectId(updateProductDto.categoryId) as any;
+      updateProductDto.categoryId = new Types.ObjectId(
+        updateProductDto.categoryId,
+      ) as any;
     }
 
     const updatedProduct = await this.productModel
       .findByIdAndUpdate(id, updateProductDto, { new: true })
-      .populate('categoryId', 'name slug')
+      .populate("categoryId", "name slug")
       .exec();
 
     if (!updatedProduct) {
-      throw new NotFoundException('Producto no encontrado');
+      throw new RpcException({
+        status: 404,
+        message: "Product not found",
+      });
     }
 
     return updatedProduct;
   }
 
   async remove(id: string): Promise<void> {
-    const product = await this.findOne(id);
+    await this.findOne(id);
     await this.productModel.findByIdAndDelete(id).exec();
   }
 
   async addReview(id: string, addReviewDto: AddReviewDto): Promise<Product> {
     const product = await this.productModel.findById(id).exec();
-    
+
     if (!product) {
-      throw new NotFoundException('Producto no encontrado');
+      throw new RpcException({
+        status: 404,
+        message: "Product not found",
+      });
     }
 
-    // Verificar si el usuario ya ha dejado una reseña
     const existingReview = product.reviews.find(
       (review) => review.userId === addReviewDto.userId,
     );
 
     if (existingReview) {
-      throw new ConflictException('El usuario ya ha dejado una reseña para este producto');
+      throw new RpcException({
+        status: 409,
+        message: "User already have made a review about this product",
+      });
     }
 
     // Agregar la nueva reseña
@@ -249,8 +269,12 @@ export class ProductService {
     product.reviews.push(newReview as any);
 
     // Recalcular la calificación promedio
-    const totalRating = product.reviews.reduce((sum, review) => sum + review.rating, 0);
-    product.averageRating = Math.round((totalRating / product.reviews.length) * 10) / 10;
+    const totalRating = product.reviews.reduce(
+      (sum, review) => sum + review.rating,
+      0,
+    );
+    product.averageRating =
+      Math.round((totalRating / product.reviews.length) * 10) / 10;
     product.totalReviews = product.reviews.length;
 
     return await product.save();
@@ -258,16 +282,22 @@ export class ProductService {
 
   async updateStock(id: string, quantity: number): Promise<Product> {
     if (quantity < 0) {
-      throw new BadRequestException('La cantidad no puede ser negativa');
+      throw new RpcException({
+        status: 400,
+        message: "Quantity cannot be negative",
+      });
     }
 
     const product = await this.productModel
       .findByIdAndUpdate(id, { stock: quantity }, { new: true })
-      .populate('categoryId', 'name slug')
+      .populate("categoryId", "name slug")
       .exec();
 
     if (!product) {
-      throw new NotFoundException('Producto no encontrado');
+      throw new RpcException({
+        status: 404,
+        message: "Product not found",
+      });
     }
 
     return product;
@@ -276,11 +306,14 @@ export class ProductService {
   async incrementViews(id: string): Promise<Product> {
     const product = await this.productModel
       .findByIdAndUpdate(id, { $inc: { views: 1 } }, { new: true })
-      .populate('categoryId', 'name slug')
+      .populate("categoryId", "name slug")
       .exec();
 
     if (!product) {
-      throw new NotFoundException('Producto no encontrado');
+      throw new RpcException({
+        status: 404,
+        message: "Product not found",
+      });
     }
 
     return product;
@@ -289,7 +322,7 @@ export class ProductService {
   async getFeatured(limit: number = 10): Promise<Product[]> {
     return this.productModel
       .find({ isFeatured: true, isActive: true })
-      .populate('categoryId', 'name slug')
+      .populate("categoryId", "name slug")
       .limit(limit)
       .sort({ createdAt: -1 })
       .exec();
@@ -298,7 +331,7 @@ export class ProductService {
   async getPopular(limit: number = 10): Promise<Product[]> {
     return this.productModel
       .find({ isActive: true })
-      .populate('categoryId', 'name slug')
+      .populate("categoryId", "name slug")
       .limit(limit)
       .sort({ totalSales: -1, views: -1 })
       .exec();

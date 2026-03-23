@@ -1,63 +1,61 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  Patch,
-  Param,
-  Delete,
-  Query,
-} from '@nestjs/common';
-import { CategoryService } from './category.service';
-import { CreateCategoryDto } from './dto/create-category.dto';
-import { UpdateCategoryDto } from './dto/update-category.dto';
+import { Controller } from "@nestjs/common";
+import { CategoryService } from "./category.service";
+import { CreateCategoryDto } from "./dto/create-category.dto";
+import { UpdateCategoryDto } from "./dto/update-category.dto";
+import { MessagePattern, Payload } from "@nestjs/microservices";
 
-@Controller('categories')
+@Controller("categories")
 export class CategoryController {
   constructor(private readonly categoryService: CategoryService) {}
 
-  @Post()
-  create(@Body() createCategoryDto: CreateCategoryDto) {
+  @MessagePattern({ cmd: "create.category" })
+  create(@Payload() createCategoryDto: CreateCategoryDto) {
     return this.categoryService.create(createCategoryDto);
   }
 
-  @Get()
+  @MessagePattern({ cmd: "find.all.categories" })
   findAll(
-    @Query('page') page: number = 1,
-    @Query('limit') limit: number = 10,
-    @Query('search') search?: string,
-    @Query('active') active?: boolean,
+    @Payload()
+    payload: {
+      page?: number;
+      limit?: number;
+      search?: string;
+      active?: boolean;
+    } = {},
   ) {
+    const { page = 1, limit = 10, search, active } = payload;
     return this.categoryService.findAll(page, limit, search, active);
   }
 
-  @Get(':id')
-  findOne(@Param('id') id: string) {
+  @MessagePattern({ cmd: "find.one.category" })
+  findOne(@Payload("id") id: string) {
     return this.categoryService.findOne(id);
   }
 
-  @Get('slug/:slug')
-  findBySlug(@Param('slug') slug: string) {
+  @MessagePattern({ cmd: "find.category.by.slug" })
+  findBySlug(@Payload("slug") slug: string) {
     return this.categoryService.findBySlug(slug);
   }
 
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() updateCategoryDto: UpdateCategoryDto) {
-    return this.categoryService.update(id, updateCategoryDto);
+  @MessagePattern({ cmd: "update.category" })
+  update(
+    @Payload() payload: { id: string; updateCategoryDto: UpdateCategoryDto },
+  ) {
+    return this.categoryService.update(payload.id, payload.updateCategoryDto);
   }
 
-  @Delete(':id')
-  remove(@Param('id') id: string) {
+  @MessagePattern({ cmd: "remove.category" })
+  remove(@Payload("id") id: string) {
     return this.categoryService.remove(id);
   }
 
-  @Patch(':id/activate')
-  activate(@Param('id') id: string) {
+  @MessagePattern({ cmd: "activate.category" })
+  activate(@Payload("id") id: string) {
     return this.categoryService.activate(id);
   }
 
-  @Patch(':id/deactivate')
-  deactivate(@Param('id') id: string) {
+  @MessagePattern({ cmd: "deactivate.category" })
+  deactivate(@Payload("id") id: string) {
     return this.categoryService.deactivate(id);
   }
 }

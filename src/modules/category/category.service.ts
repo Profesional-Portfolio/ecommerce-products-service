@@ -1,13 +1,10 @@
-import {
-  Injectable,
-  NotFoundException,
-  ConflictException,
-} from '@nestjs/common';
-import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
-import { CreateCategoryDto } from './dto/create-category.dto';
-import { UpdateCategoryDto } from './dto/update-category.dto';
-import { Category, CategoryDocument } from './schemas/category.schema';
+import { Injectable } from "@nestjs/common";
+import { InjectModel } from "@nestjs/mongoose";
+import { Model } from "mongoose";
+import { CreateCategoryDto } from "./dto/create-category.dto";
+import { UpdateCategoryDto } from "./dto/update-category.dto";
+import { Category, CategoryDocument } from "./schemas/category.schema";
+import { RpcException } from "@nestjs/microservices";
 
 @Injectable()
 export class CategoryService {
@@ -23,7 +20,10 @@ export class CategoryService {
     });
 
     if (existingByName) {
-      throw new ConflictException('Ya existe una categoría con ese nombre');
+      throw new RpcException({
+        status: 409,
+        message: "Category already exists",
+      });
     }
 
     // Verificar si el slug ya existe
@@ -32,21 +32,29 @@ export class CategoryService {
     });
 
     if (existingBySlug) {
-      throw new ConflictException('Ya existe una categoría con ese slug');
+      throw new RpcException({
+        status: 409,
+        message: "Category already exists",
+      });
     }
 
     const category = new this.categoryModel(createCategoryDto);
     return category.save();
   }
 
-  async findAll(page: number = 1, limit: number = 10, search?: string, active?: boolean) {
+  async findAll(
+    page: number = 1,
+    limit: number = 10,
+    search?: string,
+    active?: boolean,
+  ) {
     const skip = (page - 1) * limit;
     const filter: any = {};
 
     if (search) {
       filter.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { description: { $regex: search, $options: 'i' } },
+        { name: { $regex: search, $options: "i" } },
+        { description: { $regex: search, $options: "i" } },
       ];
     }
 
@@ -77,7 +85,10 @@ export class CategoryService {
     const category = await this.categoryModel.findById(id).exec();
 
     if (!category) {
-      throw new NotFoundException('Categoría no encontrada');
+      throw new RpcException({
+        status: 404,
+        message: "Category not found",
+      });
     }
 
     return category;
@@ -87,13 +98,19 @@ export class CategoryService {
     const category = await this.categoryModel.findOne({ slug }).exec();
 
     if (!category) {
-      throw new NotFoundException('Categoría no encontrada');
+      throw new RpcException({
+        status: 404,
+        message: "Category not found",
+      });
     }
 
     return category;
   }
 
-  async update(id: string, updateCategoryDto: UpdateCategoryDto): Promise<Category> {
+  async update(
+    id: string,
+    updateCategoryDto: UpdateCategoryDto,
+  ): Promise<Category> {
     const category = await this.findOne(id);
 
     // Si se está actualizando el nombre, verificar que no exista
@@ -104,7 +121,10 @@ export class CategoryService {
       });
 
       if (existingByName) {
-        throw new ConflictException('Ya existe una categoría con ese nombre');
+        throw new RpcException({
+          status: 409,
+          message: "Category already exists",
+        });
       }
     }
 
@@ -116,7 +136,11 @@ export class CategoryService {
       });
 
       if (existingBySlug) {
-        throw new ConflictException('Ya existe una categoría con ese slug');
+        // throw new ConflictException('Ya existe una categoría con ese slug');
+        throw new RpcException({
+          status: 409,
+          message: "Category already exists",
+        });
       }
     }
 
@@ -125,14 +149,17 @@ export class CategoryService {
       .exec();
 
     if (!updatedCategory) {
-      throw new NotFoundException('Categoría no encontrada');
+      throw new RpcException({
+        status: 404,
+        message: "Category not found",
+      });
     }
 
     return updatedCategory;
   }
 
   async remove(id: string): Promise<void> {
-    const category = await this.findOne(id);
+    await this.findOne(id);
     await this.categoryModel.findByIdAndDelete(id).exec();
   }
 
@@ -142,7 +169,10 @@ export class CategoryService {
       .exec();
 
     if (!category) {
-      throw new NotFoundException('Categoría no encontrada');
+      throw new RpcException({
+        status: 404,
+        message: "Category not found",
+      });
     }
 
     return category;
@@ -154,7 +184,10 @@ export class CategoryService {
       .exec();
 
     if (!category) {
-      throw new NotFoundException('Categoría no encontrada');
+      throw new RpcException({
+        status: 404,
+        message: "Category not found",
+      });
     }
 
     return category;
